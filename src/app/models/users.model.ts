@@ -2,6 +2,7 @@ import { getPool } from "../../config/db";
 import Logger from "../../config/logger";
 import {ResultSetHeader} from "mysql2";
 import { hash, verify } from "./password.model";
+import {issueToken} from "./auth.model";
 
 const get = async (userId: number) : Promise<User[]> => {
     Logger.info(`Getting user ${userId} from the database`);
@@ -22,21 +23,27 @@ const insert = async (firstName: string, lastName: string, email: string, passwo
     return result;
 }
 
-const login = async (email: string, password: string) : Promise<ResultSetHeader> => {
+const login = async (email: string, password: string) : Promise<any> => {
     Logger.info(`Attempting to log in user ${email}`);
     const conn = await getPool().getConnection();
     const query = 'select password from user where user.email = ?';
-    const [ result ] = await conn.query( query, [email]);
-    Logger.info(`${result}`);
+    const storedPassword = await conn.query( query, [email]);
+    let result = storedPassword;
+    Logger.info(`password = ${password} \n, storedPassword = ${storedPassword}`);
+    if (await verify(password, storedPassword)) {
+        result = issueToken(email);
+        const storeToken = 'update user set auth_token = ? where email = ?'
+        await conn.query( storeToken, [result, email]);
+    }
     conn.release();
     return result;
 }
 
 const alter = async (id: number, firstName: string, lastName: string, email: string, password: string, currentPassword: string) : Promise<ResultSetHeader> => {
-    Logger.info(`Updating details of user ${id}`);
+    Logger.info(`Updating details of user ${id}, "${firstName}"`);
     const conn = await getPool().getConnection();
-    const query = 'update user set first_name = ? and last_name = ? and email = ? and password = ? where user.id = ?';
-    const [ result ] = await conn.query( query, [firstName, lastName, email, password, id]);
+    const query = 'update user set first_name = ? if ? != "" where id = ?';
+    const [ result ] = await conn.query( query, [firstName, firstName, id]);
     conn.release();
     return result;
 }
