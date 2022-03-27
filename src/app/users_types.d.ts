@@ -5,5 +5,5 @@ type User = {
     lastName: string,
     imageFilename: string,
     password: string,
-    authToken: string
+    token: string
 }

@@ -9,4 +9,6 @@ module.exports = ( app: Express ) => {
         .post(users.create);
     app.route(rootUrl + '/users/login')
         .post(users.login);
+    app.route(rootUrl + '/users/logout')
+        .post(users.logout);
 };
