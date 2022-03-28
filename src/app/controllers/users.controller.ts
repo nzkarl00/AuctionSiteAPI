@@ -117,13 +117,14 @@ const logout = async (req: Request, res: Response) : Promise<void> => {
     const header = req.header(tokenHeader)
     if (!header) {
         res.status(401).send(`Unauthorized, user is not signed in`);
-    }
-    Logger.http(`POST attempting to log out user`);
-    try {
-        await users.logout(header);
-        res.status(200).send(`User successfully logged out`);
-    } catch(err) {
-        res.status(500).send(`ERROR logging out user: ${err}`);
+    } else {
+        Logger.http(`POST attempting to log out user`);
+        try {
+            await users.logout(header);
+            res.status(200).send(`User successfully logged out`);
+        } catch(err) {
+            res.status(500).send(`ERROR logging out user: ${err}`);
+        }
     }
 }
 

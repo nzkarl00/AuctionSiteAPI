@@ -1,6 +1,7 @@
 import {Request, Response} from "express";
 import Logger from '../../config/logger';
 import * as auctions from '../models/auctions.model';
+import {authorize} from "../middleware/auth.middleware";
 
 const list = async (req: Request, res: Response) : Promise<void> => {
     Logger.http(`GET selection of auctions`);
@@ -47,18 +48,52 @@ const create = async (req: Request, res: Response) : Promise<void> => {
         res.status(400).send("Please provide endDate field");
     }
     const title = req.body.title;
+    Logger.http(`POST create auction with title ${title}`);
     const description = req.body.description;
     const categoryId = req.body.categoryId;
     const endDate = req.body.endDate;
-    const reserve = 0; // TODO
-    const sellerId = 0; // TODO
-    if (Date.parse(endDate) > Date.now()) {
-        res.status(400).send("Please provide endDate that is not in the future");
+    let reserve = req.body.reserve;
+    const sellerId = await authorize(req);
+    if (reserve === undefined) {
+        reserve = 1;
     }
-    Logger.http(`POST create auction with title ${title}`);
+    if (sellerId === -1) {
+        res.status(401).send("Unauthorized, user is not logged in");
+        return;
+    }
+    if (Date.parse(endDate) < Date.now()) {
+        res.status(400).send("Please provide endDate that is in the future");
+        return;
+    }
     try {
         const result = await auctions.insert(title, description, new Date(endDate), reserve, sellerId, categoryId);
-    } catch {
-        // TODO
+        if (result.length === 0) {
+            res.status(400).send(`Bad request, category ID not found`);
+        } else {
+            res.status(201).send({"auctionId": result[0].insertId});
+        }
+    } catch (err){
+        res.status(500).send(`ERROR posting auction: ${err}`);
     }
 }
+
+const createBid = async(req: Request, res:Response) : Promise<void> => {
+    const id = req.params.id;
+    const amount = req.body.amount;
+    Logger.http(`Getting bids for auction id ${id}`);
+    const auth = await authorize(req);
+    if (auth === -1) {
+        res.status(401).send(`Cannot post bid, user not logged in`);
+        return;
+    }
+    if (auth === parseInt(id, 10)) {
+        res.status(403).send(`Cannot bid on own auction`);
+    }
+    try {
+        const result = await auctions.insertBid(parseInt(id, 10), parseInt(amount, 10), auth);
+    } catch (err) {
+        res.status(500).send(`ERROR creating bid: ${err}`);
+    }
+}
+
+export {list, read, create}
