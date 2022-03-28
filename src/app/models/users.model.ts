@@ -53,13 +53,33 @@ const logout = async (token: string) : Promise<ResultSetHeader> =>  {
     return result;
 }
 
-const alter = async (id: number, firstName: string, lastName: string, email: string, password: string, currentPassword: string) : Promise<ResultSetHeader> => {
+const alter = async (id: number, auth: number, firstName?: string, lastName?: string, email?: string, password?: string, currentPassword?: string) : Promise<boolean> => {
     Logger.info(`Updating details of user ${id}, "${firstName}"`);
     const conn = await getPool().getConnection();
-    const query = 'update user set first_name = ? if ? != "" where id = ?';
-    const [ result ] = await conn.query( query, [firstName, firstName, id]);
+    let query = 'select password from user where user.id = ?';
+    let storedPassword = await conn.query( query, [id]);
+    storedPassword = storedPassword[0][0].password;
+    if (firstName != null) {
+        query = 'update user set first_name = ? where id = ?';
+        await conn.query(query, [firstName, id]);
+    }
+    if (lastName != null) {
+        query = 'update user set last_name = ? where id = ?';
+        await conn.query(query, [lastName, id]);
+    }
+    if (email != null) {
+        query = 'update user set email = ? where id = ?';
+        await conn.query(query, [email, id]);
+    }
+    if (password != null && await verify(currentPassword, storedPassword) === true) {
+        query = 'update user set password = ? where id = ?';
+        await conn.query(query, [password, id]);
+    }
+    if (password != null && await verify(currentPassword, storedPassword) === false) {
+        return false;
+    }
     conn.release();
-    return result;
+    return true;
 }
 
 export {get, insert, login, alter, logout}

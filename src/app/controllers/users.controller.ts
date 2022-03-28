@@ -59,11 +59,30 @@ const update = async (req: Request, res: Response) : Promise<void> => {
     const email = req.body.email;
     const password = req.body.password;
     const currentPassword = req.body.currentPassword;
-    try {
-        await users.alter(parseInt(id, 10), firstName, lastName, email, password, currentPassword);
-        res.status(200).send(`Successfully updated details of user ${id}`)
-    } catch(err) {
-        res.status(500).send(`ERROR updating user ${id}: ${err}`);
+    const auth = await authorize(req);
+    if (parseInt(id,10) !== auth) {
+        res.status(403).send(`Forbidden, user id: ${id} is not logged in`);
+    } else {
+        if (email !== undefined ) {
+            if (!email.includes('@')) {
+                res.status(400).send(`Email ${email} does not contain an @, bad request`);
+            }
+        }
+        const result = await users.get(parseInt(id, 10), auth);
+        if (result.length === 0) {
+            res.status(400).send(`Invalid user id`);
+        } else {
+            try {
+                const ret = await users.alter(parseInt(id, 10), auth, firstName, lastName, email, password, currentPassword);
+                if (ret === true) {
+                    res.status(200).send(`Successfully updated details of user ${id}`);
+                } else {
+                    res.status(401).send(`Invalid current password, cannot update to new password`);
+                }
+            } catch (err) {
+                res.status(500).send(`ERROR updating user ${id}: ${err}`);
+            }
+        }
     }
 }
 
