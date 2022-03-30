@@ -2,19 +2,20 @@ import {Request, Response} from "express";
 import Logger from '../../config/logger';
 import * as auctions from '../models/auctions.model';
 import {authorize} from "../middleware/auth.middleware";
+import {doesAuctionExist, isAuctionFinished, isAuctionOwner, isBidGreaterThanMax} from "../models/auctions.model";
 
 const list = async (req: Request, res: Response) : Promise<void> => {
     Logger.http(`GET selection of auctions`);
-    const startIndex = req.params.startIndex;
-    const count = req.params.count;
-    const q = req.params.q;
-    const categoryIds = req.params.categoryIds;
-    const sellerId = req.params.sellerId;
-    const bidderId = req.params.bidderId;
-    const sortBy = req.params.sortBy;
+    const startIndex = req.query.startIndex;
+    const count = req.query.count;
+    const q = req.query.q;
+    const categoryIds = req.query.categoryIds;
+    const sellerId = req.query.sellerId;
+    const bidderId = req.query.bidderId;
+    const sortBy = req.query.sortBy;
     try {
         // Todo parse list of ints for category ID
-        const result = await auctions.getSelection(parseInt(startIndex, 10), parseInt(count, 10), q, [parseInt(categoryIds, 10)], parseInt(sellerId, 10), parseInt(bidderId, 10), sortBy);
+        const result = await auctions.getSelection(startIndex, count, q, categoryIds, sellerId, bidderId, sortBy);
         res.status(200).send(result);
     } catch( err ) {
         res.status( 500 ).send( `ERROR getting auctions: ${ err }`
@@ -78,22 +79,55 @@ const create = async (req: Request, res: Response) : Promise<void> => {
 }
 
 const createBid = async(req: Request, res:Response) : Promise<void> => {
-    const id = req.params.id;
-    const amount = req.body.amount;
-    Logger.http(`Getting bids for auction id ${id}`);
+    const id = parseInt(req.params.id, 10);
+    const amount = parseInt(req.body.amount, 10);
+    Logger.http(`Creating bid on auction: ${id}`);
     const auth = await authorize(req);
     if (auth === -1) {
         res.status(401).send(`Cannot post bid, user not logged in`);
         return;
     }
-    if (auth === parseInt(id, 10)) {
-        res.status(403).send(`Cannot bid on own auction`);
-    }
     try {
-        const result = await auctions.insertBid(parseInt(id, 10), parseInt(amount, 10), auth);
+        if (await isAuctionOwner(id, auth)) {
+            res.status(403).send(`Cannot bid on own auction`);
+        }
+        if (await doesAuctionExist(id) === false) {
+            res.status(404).send(`Auction not found`);
+            return;
+        }
+        if (await isBidGreaterThanMax(amount, id) === false) {
+            res.status(400).send(`Bid must be greater than existing max bid`);
+            return;
+        }
+        if (await isAuctionFinished(id)) {
+            res.status(403).send(`Cannot bid on auction that has closed`);
+            return;
+        }
+        const result = await auctions.insertBid(id, amount, auth);
+        res.status(201).send(`Bid created with id ${result[0].insertId} and amount ${amount} on auction ${id}`);
+        return;
     } catch (err) {
         res.status(500).send(`ERROR creating bid: ${err}`);
+        return;
     }
 }
 
-export {list, read, create}
+const readBids = async (req: Request, res: Response) : Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    Logger.http(`Getting bids for auction: ${id}`);
+    try {
+        const result = await auctions.getBids(id);
+        if (result.length === 0) {
+            res.status(404).send(`Auction: ${id} not found`);
+            return;
+        } else {
+            res.status(200).send(result);
+        }
+    } catch (err) {
+        res.status(500).send(`ERROR getting bids: ${err}`);
+    }
+}
+
+
+
+export {list, read, create, createBid, readBids}

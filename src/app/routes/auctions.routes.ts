@@ -9,7 +9,7 @@ module.exports = (app: Express) => {
         .get(auctions.list)
     app.route(rootUrl + '/auctions/:id/bids')
         .post(auctions.createBid)
-        .get(auctions.readBid)
+        .get(auctions.readBids)
     app.route(rootUrl + '/auctions/:id')
         .get(auctions.read)
 };
