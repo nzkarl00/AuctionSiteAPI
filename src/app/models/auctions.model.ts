@@ -2,11 +2,14 @@ import { getPool } from "../../config/db";
 import Logger from "../../config/logger";
 import {ResultSetHeader} from "mysql2";
 
-const getSelection = async (startIndex: string, count: string, q: string, categoryIds: string, sellerId: string, bidderId: string, sortBy: string) : Promise<Auction[]> => {
+let paramList: (string | number)[] = [];
+
+const getSelection = async (startIndex: number, count: number, q: string, categoryIds: number[], sellerId: number, bidderId: number, sortBy: string) : Promise<Auction[]> => {
     Logger.info(`Getting auctions from the database starting from index ${startIndex} with search term ${q}`);
+    paramList = [];
     const conn = await getPool().getConnection();
-    const query = 'SELECT * FROM auction WHERE title LIKE %?% OR description LIKE %?% AND category_id IN ? AND seller_id = ? AND bidderId = ? ORDER BY ?';
-    const [ rows ] = await conn.query( query, [q, q, categoryIds, sellerId, bidderId, sortBy] );
+    const query = await buildQuery(q, categoryIds, sellerId, bidderId, sortBy);
+    const [ rows ] = await conn.query( query, paramList );
     conn.release();
     return rows;
 };
@@ -14,8 +17,8 @@ const getSelection = async (startIndex: string, count: string, q: string, catego
 const getOne = async (auctionId: number) : Promise<Auction[]> => {
     Logger.info(`Getting auction with id ${auctionId}`);
     const conn = await getPool().getConnection();
-    const query = 'SELECT auction.id as auctionId, auction.title, auction.category_id as categoryId, auction.seller_id as sellerId, user.first_name as sellerFirstName, ' +
-        'user.last_name as seller.LastName, reserve FROM auction join user on auction.seller_id=user.id WHERE auction.id = ?';
+    const query = 'SELECT auction.id as auctionId, auction.title, auction.description, auction.category_id as categoryId, auction.seller_id as sellerId, user.first_name as sellerFirstName, ' +
+        'user.last_name as sellerLastName, reserve, count(auction_bid.id) as numBids, max(amount) as highestBid, end_date as endDate from auction_bid right join auction on auction.id = auction_bid.auction_id join user on auction.seller_id = user.id WHERE auction.id=? GROUP BY auction.id';
     const [ rows ] = await conn.query( query, [ auctionId ]);
     conn.release();
     return rows;
@@ -93,17 +96,73 @@ const isAuctionOwner = async(auctionId: number, userId: number) : Promise<boolea
     return result[0][0].seller === userId;
 }
 
-const buildQuery = async(q: string, categoryIds: string, sellerId: string, bidderId: string, sortBy: string) : Promise<String> => {
-    let query = 'select auction_id as auctionId, auction.title, auction.category_id as categoryId, auction.seller_id as sellerId, user.first_name as sellerFirstName, user.last_name as sellerLastName, reserve, ' +
-    'count(*), max(amount) as highestBid, end_date as endDate from auction_bid join auction on auction.id = auction_bid.auction_id join user on auction.seller_id = user.id';
-    if (q !== undefined && sellerId !== undefined && bidderId !== undefined && sortBy !== undefined) {
+const buildQuery = async(q: string, categoryIds: number[], sellerId: number, bidderId: number, sortBy: string) : Promise<(any)> => {
+    let query = 'select auction.id as auctionId, auction.title, auction.category_id as categoryId, auction.seller_id as sellerId, user.first_name as sellerFirstName, user.last_name as sellerLastName, reserve, ' +
+    'count(auction_bid.id) as numBids, max(amount) as highestBid, end_date as endDate from auction_bid right join auction on auction.id = auction_bid.auction_id join user on auction.seller_id = user.id';
+    if (q !== undefined || sellerId !== undefined || bidderId !== undefined || categoryIds !== undefined) {
         query += ' WHERE 1=1'
         if (q !== undefined) {
-            query += ' AND title LIKE %?% OR description LIKE %?%';
+            query += " AND auction.title LIKE ? OR auction.description LIKE ?";
+            paramList.push(q);
+            paramList.push(q);
+        }
+        if (categoryIds !== undefined && categoryIds.length > 0) {
+            query += ' AND auction.category_id = ?';
+            paramList.push(categoryIds[0]);
+            for (let i = 1; i < categoryIds.length; i++) {
+                query += ' OR auction.category_id = ?';
+                paramList.push(categoryIds[i]);
+            }
+        }
+        if (sellerId !== undefined) {
+            query += ' AND auction.seller_id = ?';
+            paramList.push(sellerId);
+        }
+        if (bidderId !== undefined) {
+            query += ' AND auction.id IN (select auction_id from auction_bid WHERE auction_bid.user_id=?)';
+            paramList.push(bidderId);
         }
     }
+    query += ' GROUP BY auction.id';
+    switch (sortBy) {
+        case undefined: {
+            query += ' ORDER BY endDate ASC';
+            break;
+        }
+        case 'CLOSING_SOON': {
+            query += ' ORDER BY endDate ASC';
+            break;
+        }
+        case 'ALPHABETICAL_ASC': {
+            query += ' ORDER BY auction.title ASC';
+            break;
+        }
+        case 'ALPHABETICAL_DESC': {
+            query += ' ORDER BY auction.title DESC';
+            break;
+        }
+        case 'BIDS_ASC': {
+            query += ' ORDER BY highestBid ASC';
+            break;
+        }
+        case 'BIDS_DESC': {
+            query += ' ORDER BY highestBid DESC';
+            break;
+        }
+        case 'CLOSING_LAST': {
+            query += ' ORDER BY endDate ASC';
+            break;
+        }
+        case 'RESERVE_ASC': {
+            query += ' ORDER BY auction.reserve ASC';
+            break;
+        }
+        case 'RESERVE_DESC': {
+            query += ' ORDER BY auction.reserve DESC';
+            break;
+        }
+    }
+    return query;
 }
 
 export { getSelection, getOne, insert, remove, insertBid, getBids, isAuctionFinished, doesAuctionExist, isBidGreaterThanMax, isAuctionOwner }
-
-const omegaquery = "SELECT auction.id as auctionId, auction.title, auction.category_id as categoryId, auction.seller_id as sellerId, user.first_name as sellerFirstName, user.last_name as sellerLastName, reserve, count(*) as numBids, max(amount) as highestBid, end_date as endDate FROM auction join user on auction.seller_id=user.id join auction_bid on auction_bid.auction_id = auction.id where auction.id IN (select auction_id from auction_bid WHERE auction_bid.user_id=2) group by auction.id;";

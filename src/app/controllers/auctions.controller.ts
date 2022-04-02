@@ -3,20 +3,41 @@ import Logger from '../../config/logger';
 import * as auctions from '../models/auctions.model';
 import {authorize} from "../middleware/auth.middleware";
 import {doesAuctionExist, isAuctionFinished, isAuctionOwner, isBidGreaterThanMax} from "../models/auctions.model";
+import {isArray} from "util";
 
 const list = async (req: Request, res: Response) : Promise<void> => {
     Logger.http(`GET selection of auctions`);
-    const startIndex = req.query.startIndex;
-    const count = req.query.count;
-    const q = req.query.q;
-    const categoryIds = req.query.categoryIds;
-    const sellerId = req.query.sellerId;
-    const bidderId = req.query.bidderId;
-    const sortBy = req.query.sortBy;
+    let startIndex: number;
+    if (req.query.hasOwnProperty("startIndex")) {
+        startIndex = parseInt(req.query.startIndex.toString(), 10);
+    }
+    let count: number;
+    if (req.query.hasOwnProperty("count")) {
+        count = parseInt(req.query.count.toString(), 10);
+    }
+    let q: string;
+    if (req.query.hasOwnProperty("q")) {
+        q = '%' + req.query.q.toString() + '%';
+    }
+    let categoryIds: number[];
+    if (req.query.hasOwnProperty("categoryIds")) {
+        categoryIds = req.query.categoryIds.toString().split(',').map(Number);
+    }
+    let sellerId: number;
+    if (req.query.hasOwnProperty("sellerId")) {
+        sellerId = parseInt(req.query.sellerId.toString(), 10);
+    }
+    let bidderId: number;
+    if (req.query.hasOwnProperty("bidderId")) {
+        bidderId = parseInt(req.query.bidderId.toString(), 10);
+    }
+    let sortBy: string;
+    if (req.query.hasOwnProperty("sortBy")) {
+        sortBy = req.query.sortBy.toString();
+    }
     try {
-        // Todo parse list of ints for category ID
         const result = await auctions.getSelection(startIndex, count, q, categoryIds, sellerId, bidderId, sortBy);
-        res.status(200).send(result);
+        res.status(200).send({"auctions": result, "count": result.length});
     } catch( err ) {
         res.status( 500 ).send( `ERROR getting auctions: ${ err }`
         );
