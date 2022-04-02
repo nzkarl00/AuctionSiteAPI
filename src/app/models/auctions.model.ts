@@ -2,7 +2,7 @@ import { getPool } from "../../config/db";
 import Logger from "../../config/logger";
 import {ResultSetHeader} from "mysql2";
 
-let paramList: (string | number)[] = [];
+let paramList: (string | number | Date)[] = [];
 
 const getSelection = async (startIndex: number, count: number, q: string, categoryIds: number[], sellerId: number, bidderId: number, sortBy: string) : Promise<Auction[]> => {
     Logger.info(`Getting auctions from the database starting from index ${startIndex} with search term ${q}`);
@@ -43,8 +43,18 @@ const insert = async (title: string, description: string, endDate: Date, reserve
 const remove = async (auctionId: number) : Promise<ResultSetHeader> => {
     Logger.info(`Deleting auction with id ${auctionId}`);
     const conn = await getPool().getConnection();
-    const query = 'DELETE FROM auction WHERE auction_id = ?'
+    const query = 'DELETE FROM auction WHERE id = ?'
     const [ result ] = await conn.query( query, [ auctionId ] );
+    conn.release();
+    return result;
+}
+
+const edit = async (auctionId: number, title: string, description: string, categoryId: number, endDate: Date, reserve: number) : Promise<ResultSetHeader> => {
+    Logger.info(`Editing auction with id ${auctionId}`);
+    paramList = [];
+    const conn = await getPool().getConnection();
+    const query = await buildEditQuery(auctionId, title, description, categoryId, endDate, reserve);
+    const [ result ] = await conn.query(query, paramList);
     conn.release();
     return result;
 }
@@ -67,10 +77,20 @@ const getBids = async(auctionId: number) : Promise<Bid[]> => {
     return result;
 }
 
+const getCategories = async() : Promise<Category[]> => {
+    Logger.info(`Getting all categories`);
+    const conn = await getPool().getConnection();
+    const query = 'SELECT id as categoryId, name from category'
+    const [ result ] = await conn.query(query);
+    conn.release();
+    return result;
+}
+
 const isBidGreaterThanMax = async(amount: number, auctionId: number) : Promise<boolean> => {
     const conn = await getPool().getConnection();
     const query = 'select max(amount) as max from auction_bid where auction_id = ?'
     const result = await conn.query(query, [auctionId]);
+    conn.release();
     return result[0][0].max < amount;
 }
 
@@ -79,6 +99,7 @@ const isAuctionFinished = async(auctionId: number) : Promise<boolean> => {
     const query = 'SELECT end_date FROM auction WHERE id = ?';
     const result = await conn.query(query, [auctionId]);
     const things = result[0][0].end_date < Date.now();
+    conn.release();
     return result[0][0].end_date < Date.now();
 }
 
@@ -86,14 +107,40 @@ const doesAuctionExist = async(auctionId: number) : Promise<boolean> => {
     const conn = await getPool().getConnection();
     const query = 'SELECT * FROM auction WHERE id = ?';
     const [ result ] = await conn.query(query, [auctionId]);
+    conn.release();
     return result.length !== 0;
 }
 
 const isAuctionOwner = async(auctionId: number, userId: number) : Promise<boolean> => {
     const conn = await getPool().getConnection();
     const query = 'SELECT seller_id as seller from auction where id = ?';
-    const result = await conn.query(query, [auctionId]);
-    return result[0][0].seller === userId;
+    const [ result ] = await conn.query(query, [auctionId]);
+    conn.release();
+    return result[0].seller === userId;
+}
+
+const isValidCategory = async(categoryId: number) : Promise<boolean> => {
+    const conn = await getPool().getConnection();
+    const query = 'SELECT * FROM category where id = ?';
+    const [ result ] = await conn.query(query, [categoryId]);
+    conn.release();
+    if (result.length === 0) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+const auctionHasBids = async(auctionId: number) : Promise<boolean> => {
+    const conn = await getPool().getConnection();
+    const query = 'SELECT * FROM auction_bid where auction_id = ?';
+    const [ result ] = await conn.query(query, [auctionId]);
+    conn.release();
+    if (result.length === 0) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 const buildQuery = async(q: string, categoryIds: number[], sellerId: number, bidderId: number, sortBy: string) : Promise<(any)> => {
@@ -165,4 +212,32 @@ const buildQuery = async(q: string, categoryIds: number[], sellerId: number, bid
     return query;
 }
 
-export { getSelection, getOne, insert, remove, insertBid, getBids, isAuctionFinished, doesAuctionExist, isBidGreaterThanMax, isAuctionOwner }
+const buildEditQuery = async (auctionId: number, title: string, description: string, categoryId: number, endDate: Date, reserve: number) : Promise<string> => {
+    let query = 'UPDATE auction SET id = ?';
+    paramList.push(auctionId);
+    if (title !== undefined) {
+        query += ', title = ?';
+        paramList.push(title);
+    }
+    if (description !== undefined) {
+        query += ', description = ?';
+        paramList.push(description);
+    }
+    if (categoryId !== undefined) {
+        query += ', category_id = ?';
+        paramList.push(categoryId);
+    }
+    if (endDate !== undefined) {
+        query += ', end_date = ?';
+        paramList.push(endDate);
+    }
+    if (reserve !== undefined) {
+        query += ', reserve = ?';
+        paramList.push(reserve);
+    }
+    query += ' WHERE id = ?';
+    paramList.push(auctionId);
+    return query;
+}
+
+export { getSelection, getOne, insert, remove, insertBid, getBids, isAuctionFinished, doesAuctionExist, isBidGreaterThanMax, isAuctionOwner, isValidCategory, auctionHasBids, getCategories, edit }

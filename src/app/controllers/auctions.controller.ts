@@ -2,8 +2,15 @@ import {Request, Response} from "express";
 import Logger from '../../config/logger';
 import * as auctions from '../models/auctions.model';
 import {authorize} from "../middleware/auth.middleware";
-import {doesAuctionExist, isAuctionFinished, isAuctionOwner, isBidGreaterThanMax} from "../models/auctions.model";
-import {isArray} from "util";
+import {
+    auctionHasBids,
+    doesAuctionExist,
+    isAuctionFinished,
+    isAuctionOwner,
+    isBidGreaterThanMax,
+    isValidCategory
+} from "../models/auctions.model";
+import bodyParser from "body-parser";
 
 const list = async (req: Request, res: Response) : Promise<void> => {
     Logger.http(`GET selection of auctions`);
@@ -38,9 +45,10 @@ const list = async (req: Request, res: Response) : Promise<void> => {
     try {
         const result = await auctions.getSelection(startIndex, count, q, categoryIds, sellerId, bidderId, sortBy);
         res.status(200).send({"auctions": result, "count": result.length});
+        return;
     } catch( err ) {
-        res.status( 500 ).send( `ERROR getting auctions: ${ err }`
-        );
+        res.status( 500 ).send( `ERROR getting auctions: ${ err }`);
+        return;
     }
 };
 
@@ -51,13 +59,45 @@ const read = async (req: Request, res: Response) : Promise<void> => {
         const result = await auctions.getOne( parseInt(id, 10));
         if (result.length === 0) {
             res.status( 404 ).send('Auction not found')
+            return;
         } else {
             res.status( 200 ).send( result[0] );
+            return;
         }
     } catch(err) {
         res.status( 500 ).send(`ERROR reading auction ${id}: ${ err }`);
+        return;
     }
 };
+
+const deleteAuction = async (req: Request, res: Response) : Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    const auth = await authorize(req);
+    if (auth === -1) {
+        res.status(401).send(`Cannot delete auction, user not logged in`);
+        return;
+    }
+    try {
+        if (await doesAuctionExist(id) === false) {
+            res.status(404).send(`Auction not found`);
+            return;
+        }
+        if (!await isAuctionOwner(id, auth)) {
+            res.status(403).send(`Cannot delete another user's auction`);
+            return;
+        }
+        if (await auctionHasBids(id)) {
+            res.status(403).send(`Cannot delete an auction that has bids`);
+            return;
+        }
+        const result = await auctions.remove(id);
+        res.status(200).send(`Deleted auction with id ${result.insertId}`);
+        return;
+    } catch (err){
+        res.status(500).send(`ERROR deleting auction: ${err}`);
+        return;
+    }
+}
 
 const create = async (req: Request, res: Response) : Promise<void> => {
     if (!req.body.hasOwnProperty("title")) {
@@ -79,24 +119,77 @@ const create = async (req: Request, res: Response) : Promise<void> => {
     if (reserve === undefined) {
         reserve = 1;
     }
-    if (sellerId === -1) {
-        res.status(401).send("Unauthorized, user is not logged in");
-        return;
-    }
-    if (Date.parse(endDate) < Date.now()) {
-        res.status(400).send("Please provide endDate that is in the future");
-        return;
-    }
     try {
+        if (sellerId === -1) {
+            res.status(401).send("Unauthorized, user is not logged in");
+            return;
+        }
+        if (Date.parse(endDate) < Date.now()) {
+            res.status(400).send("Please provide endDate that is in the future");
+            return;
+        }
+        if (!isValidCategory(categoryId)) {
+            res.status(400).send("Invalid category ID");
+            return;
+        }
         const result = await auctions.insert(title, description, new Date(endDate), reserve, sellerId, categoryId);
         if (result.length === 0) {
             res.status(400).send(`Bad request, category ID not found`);
+            return;
         } else {
             res.status(201).send({"auctionId": result[0].insertId});
+            return;
         }
     } catch (err){
         res.status(500).send(`ERROR posting auction: ${err}`);
+        return;
     }
+}
+
+const update = async (req: Request, res: Response) : Promise<void> => {
+    const id = parseInt(req.params.id, 10);
+    const title = req.body.title;
+    const description = req.body.description;
+    const categoryId = parseInt(req.body.categoryId, 10);
+    let endDate = req.body.endDate;
+    const reserve = parseInt(req.body.reserve, 10);
+    const auth = await authorize(req);
+    if (auth === -1) {
+        res.status(401).send(`Cannot edit auction, user not logged in`);
+        return;
+    }
+    try {
+        if (await doesAuctionExist(id) === false) {
+            res.status(404).send(`Auction not found`);
+            return;
+        }
+        if (!await isAuctionOwner(id, auth)) {
+            res.status(403).send(`Cannot edit another user's auction`);
+            return;
+        }
+        if (await auctionHasBids(id)) {
+            res.status(403).send(`Cannot edit an auction that has bids`);
+            return;
+        }
+        if (req.body.hasOwnProperty("endDate")) {
+            if (Date.parse(endDate) < Date.now()) {
+                res.status(400).send("Please provide endDate that is in the future");
+                return;
+            }
+            endDate = new Date(endDate);
+        }
+        if (req.body.hasOwnProperty("categoryId")) {
+            if (!isValidCategory(categoryId)) {
+                res.status(400).send("Invalid category ID");
+                return;
+            }
+        }
+        const result = await auctions.edit(id, title, description, categoryId, endDate, reserve);
+        res.status(200).send(`Edited details of auction: ${id}`);
+    } catch (err) {
+    res.status(500).send(`ERROR editing auction: ${err}`);
+    return;
+}
 }
 
 const createBid = async(req: Request, res:Response) : Promise<void> => {
@@ -109,11 +202,12 @@ const createBid = async(req: Request, res:Response) : Promise<void> => {
         return;
     }
     try {
-        if (await isAuctionOwner(id, auth)) {
-            res.status(403).send(`Cannot bid on own auction`);
-        }
         if (await doesAuctionExist(id) === false) {
             res.status(404).send(`Auction not found`);
+            return;
+        }
+        if (await isAuctionOwner(id, auth)) {
+            res.status(403).send(`Cannot bid on own auction`);
             return;
         }
         if (await isBidGreaterThanMax(amount, id) === false) {
@@ -143,12 +237,25 @@ const readBids = async (req: Request, res: Response) : Promise<void> => {
             return;
         } else {
             res.status(200).send(result);
+            return;
         }
     } catch (err) {
         res.status(500).send(`ERROR getting bids: ${err}`);
+        return;
+    }
+}
+
+const readCategories = async (req: Request, res: Response) : Promise<void> => {
+    Logger.http(`Getting list of categories`);
+    try {
+        const result = await auctions.getCategories();
+        res.status(200).send(result);
+        return;
+    } catch (err) {
+        res.status(500).send(`ERROR getting categories: ${err}`);
+        return;
     }
 }
 
 
-
-export {list, read, create, createBid, readBids}
+export {list, read, create, createBid, readBids, deleteAuction, readCategories, update }
