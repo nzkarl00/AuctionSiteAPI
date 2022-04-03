@@ -1,6 +1,8 @@
 import { getPool } from "../../config/db";
 import Logger from "../../config/logger";
 import {ResultSetHeader} from "mysql2";
+import fs from "mz/fs";
+import {Response} from "express";
 
 let paramList: (string | number | Date)[] = [];
 
@@ -86,6 +88,23 @@ const getCategories = async() : Promise<Category[]> => {
     return result;
 }
 
+const updatePhoto = async (id: number, photo: any) : Promise<ResultSetHeader> => {
+    Logger.info(`Updating photo for auction ${id}`);
+    const conn = await getPool().getConnection();
+    const query = 'UPDATE auction SET image_filename = ? where id = ?';
+    const [ result ] = await conn.query(query, [photo, id]);
+    conn.release();
+    return result;
+}
+
+const getPhoto = async (id: number) : Promise<any> => {
+    Logger.info(`Getting photo for auction ${id}`);
+    const conn = await getPool().getConnection();
+    const query = 'SELECT image_filename as im FROM auction WHERE id = ?';
+    const [ result ] = await conn.query(query, [id]);
+    return result[0].im;
+}
+
 const isBidGreaterThanMax = async(amount: number, auctionId: number) : Promise<boolean> => {
     const conn = await getPool().getConnection();
     const query = 'select max(amount) as max from auction_bid where auction_id = ?'
@@ -141,6 +160,14 @@ const auctionHasBids = async(auctionId: number) : Promise<boolean> => {
     } else {
         return true;
     }
+}
+
+const auctionHasImage = async(auctionId: number) : Promise<boolean> => {
+    const conn = await getPool().getConnection();
+    const query = 'SELECT * FROM auction WHERE id = ? AND image_filename IS NOT NULL';
+    const [ result ] = await conn.query(query, [auctionId]);
+    conn.release();
+    return result.length !== 0;
 }
 
 const buildQuery = async(q: string, categoryIds: number[], sellerId: number, bidderId: number, sortBy: string) : Promise<(any)> => {
@@ -240,4 +267,4 @@ const buildEditQuery = async (auctionId: number, title: string, description: str
     return query;
 }
 
-export { getSelection, getOne, insert, remove, insertBid, getBids, isAuctionFinished, doesAuctionExist, isBidGreaterThanMax, isAuctionOwner, isValidCategory, auctionHasBids, getCategories, edit }
+export { getSelection, getOne, insert, remove, insertBid, getBids, isAuctionFinished, doesAuctionExist, isBidGreaterThanMax, isAuctionOwner, isValidCategory, auctionHasBids, getCategories, edit, updatePhoto, auctionHasImage, getPhoto }

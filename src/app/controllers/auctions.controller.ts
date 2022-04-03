@@ -2,15 +2,16 @@ import {Request, Response} from "express";
 import Logger from '../../config/logger';
 import * as auctions from '../models/auctions.model';
 import {authorize} from "../middleware/auth.middleware";
+import fs from 'mz/fs';
 import {
-    auctionHasBids,
+    auctionHasBids, auctionHasImage,
     doesAuctionExist,
     isAuctionFinished,
     isAuctionOwner,
     isBidGreaterThanMax,
     isValidCategory
 } from "../models/auctions.model";
-import bodyParser from "body-parser";
+import mime from 'mime';
 
 const list = async (req: Request, res: Response) : Promise<void> => {
     Logger.http(`GET selection of auctions`);
@@ -257,5 +258,69 @@ const readCategories = async (req: Request, res: Response) : Promise<void> => {
     }
 }
 
+const viewImage = async (req: Request, res: Response) : Promise<void> => {
 
-export {list, read, create, createBid, readBids, deleteAuction, readCategories, update }
+    const id = req.params.id;
+    Logger.http(`Getting image for auction ${id}`);
+    try {
+        if (await doesAuctionExist(parseInt(id, 10)) === false) {
+            res.status(404).send(`Auction not found`);
+            return;
+        }
+        if (!auctionHasImage(parseInt(id, 10))) {
+            res.status(404).send(`Auction image not found`)
+            return;
+        }
+        const result = await auctions.getPhoto(parseInt(id, 10));
+        const path = "storage/images/" + result;
+        Logger.debug(`${path}`)
+        const photo = await fs.readFile("storage/images/" + result);
+        res.status(200).contentType(mime.getType("storage/images/" + result)).send(photo);
+        return;
+    } catch (err) {
+        res.status(500).send(`ERROR getting categories: ${err}`);
+        return;
+    }
+}
+
+const addImage = async (req: Request, res: Response) : Promise<void> => {
+    Logger.http(`Setting auction image`);
+    const id = req.params.id;
+    const auth = await authorize(req);
+    const imageType = req.header("Content-Type");
+    if (auth === -1) {
+        res.status(401).send(`Cannot upload photo, user not logged in`);
+        return;
+    }
+    if (imageType !== "image/png" && imageType !== "image/jpeg" && imageType !== "image/gif") {
+        res.status(400).send(`Invalid image type`);
+        return;
+    }
+    try {
+        if (await doesAuctionExist(parseInt(id, 10)) === false) {
+            res.status(404).send(`Auction not found`);
+            return;
+        }
+        if (!await isAuctionOwner(parseInt(id, 10), auth)) {
+            res.status(403).send(`Cannot upload image to auction owned by another user`);
+            return;
+        }
+        const isEdit = await auctionHasImage(parseInt(id, 10));
+        const filePath = "auction_" + id + "." + imageType.split("/")[1]
+        const photo = await fs.writeFile("storage/images/" + filePath, req.body, 'base64');
+        const result = await auctions.updatePhoto(parseInt(id, 10), filePath);
+        if (isEdit) {
+            res.status(200).send(`Image successfully updated for auction ${id}`);
+            return;
+        } else {
+            res.status(201).send(`Image successfully uploaded to auction ${id}`);
+            return;
+        }
+    } catch (err) {
+        res.status(500).send(`ERROR getting categories: ${err}`);
+        return;
+    }
+}
+
+
+export {list, read, create, createBid, readBids, deleteAuction, readCategories, update, viewImage, addImage }
