@@ -82,4 +82,49 @@ const alter = async (id: number, auth: number, firstName?: string, lastName?: st
     return true;
 }
 
-export {get, insert, login, alter, logout}
+const getPhoto = async (id: number) : Promise<any> => {
+    Logger.info(`Getting photo for user ${id}`);
+    const conn = await getPool().getConnection();
+    const query = 'select image_filename as im from user where id = ?';
+    const [ result ] = await conn.query(query, [id]);
+    conn.release();
+    return result[0].im;
+}
+
+const updatePhoto = async (id: number, photo: any) : Promise<ResultSetHeader> => {
+    Logger.info(`Updating photo for user ${id}`);
+    const conn = await getPool().getConnection();
+    const query = 'UPDATE user SET image_filename = ? where id = ?';
+    const [ result ] = await conn.query(query, [photo, id]);
+    conn.release();
+    return result;
+}
+
+const removePhoto = async (id: number) : Promise<ResultSetHeader> => {
+    Logger.info(`Deleting photo for user ${id}`);
+    const conn = await getPool().getConnection();
+    const query = 'UPDATE user SET image_filename = NULL where id = ?';
+    const [ result ] = await conn.query(query, [id]);
+    conn.release();
+    return result;
+}
+
+const doesUserExist = async (id: number) : Promise<boolean> => {
+    const conn = await getPool().getConnection();
+    const query = 'select * from user where id = ?';
+    const [ result ] = await conn.query(query, [id]);
+    conn.release();
+    return (result.length > 0);
+}
+
+const userHasImage = async(id: number) : Promise<boolean> => {
+    const conn = await getPool().getConnection();
+    const query = 'SELECT * FROM user WHERE id = ? AND image_filename IS NOT NULL';
+    const [ result ] = await conn.query(query, [id]);
+    conn.release();
+    return result.length !== 0;
+}
+
+
+
+export {get, insert, login, alter, logout, getPhoto, updatePhoto, removePhoto, doesUserExist, userHasImage}

@@ -3,6 +3,7 @@ import Logger from "../../config/logger";
 import {ResultSetHeader} from "mysql2";
 import fs from "mz/fs";
 import {Response} from "express";
+import {start} from "repl";
 
 let paramList: (string | number | Date)[] = [];
 
@@ -13,7 +14,11 @@ const getSelection = async (startIndex: number, count: number, q: string, catego
     const query = await buildQuery(q, categoryIds, sellerId, bidderId, sortBy);
     const [ rows ] = await conn.query( query, paramList );
     conn.release();
-    return rows;
+    if (count !== undefined) {
+        return rows.slice(startIndex, startIndex+count);
+    } else {
+        return rows.slice(startIndex);
+    }
 };
 
 const getOne = async (auctionId: number) : Promise<Auction[]> => {
@@ -102,6 +107,7 @@ const getPhoto = async (id: number) : Promise<any> => {
     const conn = await getPool().getConnection();
     const query = 'SELECT image_filename as im FROM auction WHERE id = ?';
     const [ result ] = await conn.query(query, [id]);
+    conn.release();
     return result[0].im;
 }
 
@@ -236,6 +242,7 @@ const buildQuery = async(q: string, categoryIds: number[], sellerId: number, bid
             break;
         }
     }
+    query += ', auction.id ASC'
     return query;
 }
 

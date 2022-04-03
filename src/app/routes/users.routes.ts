@@ -5,6 +5,10 @@ module.exports = ( app: Express ) => {
     app.route(rootUrl + '/users/:id')
         .get(users.read)
         .patch(users.update)
+    app.route(rootUrl + '/users/:id/image')
+        .get(users.viewImage)
+        .put(users.addImage)
+        .delete(users.deleteImage)
     app.route(rootUrl + '/users/register')
         .post(users.create);
     app.route(rootUrl + '/users/login')

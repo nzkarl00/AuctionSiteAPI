@@ -2,6 +2,11 @@ import * as users from '../models/users.model';
 import Logger from "../../config/logger";
 import {Request, Response} from "express";
 import {authorize} from "../middleware/auth.middleware";
+import {doesUserExist, getPhoto, userHasImage} from "../models/users.model";
+import fs from "mz/fs";
+import mime from "mime";
+import {auctionHasImage} from "../models/auctions.model";
+import * as auctions from "../models/auctions.model";
 
 const create = async (req: Request, res: Response) : Promise<void> => {
     if (! req.body.hasOwnProperty("firstName")) {
@@ -128,5 +133,93 @@ const logout = async (req: Request, res: Response) : Promise<void> => {
     }
 }
 
-export {create, read, update, login, logout}
+const addImage = async (req: Request, res: Response) : Promise<void> => {
+    const id = req.params.id;
+    const auth = await authorize(req);
+    const imageType = req.header("Content-Type");
+    if (auth === -1) {
+        res.status(401).send(`Cannot upload photo, user not logged in`);
+        return;
+    }
+    if (imageType !== "image/png" && imageType !== "image/jpeg" && imageType !== "image/gif") {
+        res.status(400).send(`Invalid image type`);
+        return;
+    }
+    try {
+        if (!await doesUserExist(parseInt(id, 10))) {
+            res.status(404).send(`User ${id} not found`);
+            return;
+        }
+        if (auth !== parseInt(id, 10)) {
+            res.status(403).send(`Cannot change another user's photo`);
+            return;
+        }
+        const isEdit = await userHasImage(parseInt(id, 10));
+        const filePath = "user_" + id + "." + imageType.split("/")[1]
+        const photo = await fs.writeFile("storage/images/" + filePath, req.body, 'base64');
+        const result = await users.updatePhoto(parseInt(id, 10), filePath);
+        if (isEdit) {
+            res.status(200).send(`Image successfully updated for user ${id}`);
+            return;
+        } else {
+            res.status(201).send(`Image successfully uploaded to user ${id}`);
+            return;
+        }
+    } catch(err) {
+        res.status(500).send(`ERROR uploading photo: ${err}`);
+        return;
+    }
+}
+
+const viewImage = async (req: Request, res: Response) : Promise<void> => {
+    const id = req.params.id;
+    try {
+        if (!await doesUserExist(parseInt(id, 10))) {
+            res.status(404).send(`User ${id} not found`);
+            return;
+        }
+        if (!await userHasImage(parseInt(id, 10))) {
+            res.status(404).send(`User ${id} has no photo`);
+            return;
+        }
+        const result = await users.getPhoto(parseInt(id, 10));
+        const path = "storage/images/" + result;
+        const photo = await fs.readFile("storage/images/" + result);
+        res.status(200).contentType(mime.getType("storage/images/" + result)).send(photo);
+        return;
+    } catch(err) {
+        res.status(500).send(`ERROR getting photo for user ${id}: ${err}`);
+        return;
+    }
+}
+
+const deleteImage = async(req: Request, res: Response) : Promise<void> => {
+    const id = req.params.id;
+    const auth = await authorize(req);
+    if (auth === -1) {
+        res.status(401).send(`Cannot delete photo, user not logged in`);
+        return;
+    }
+    try {
+        if (!await doesUserExist(parseInt(id, 10))) {
+            res.status(404).send(`User ${id} not found`);
+            return;
+        }
+        if (!await userHasImage(parseInt(id, 10))) {
+            res.status(404).send(`User ${id} has no photo`);
+            return;
+        }
+        if (auth !== parseInt(id, 10)) {
+            res.status(403).send(`Cannot change another user's photo`);
+            return;
+        }
+        const result = await users.removePhoto(parseInt(id, 10));
+        res.status(200).send(`Deleted photo for user ${id}`);
+    } catch(err) {
+        res.status(500).send(`ERROR deleting photo for user ${id}: ${err}`);
+        return;
+    }
+}
+
+export {create, read, update, login, logout, addImage, viewImage, deleteImage}
 

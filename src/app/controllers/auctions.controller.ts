@@ -18,6 +18,8 @@ const list = async (req: Request, res: Response) : Promise<void> => {
     let startIndex: number;
     if (req.query.hasOwnProperty("startIndex")) {
         startIndex = parseInt(req.query.startIndex.toString(), 10);
+    } else {
+        startIndex = 0;
     }
     let count: number;
     if (req.query.hasOwnProperty("count")) {
@@ -273,7 +275,6 @@ const viewImage = async (req: Request, res: Response) : Promise<void> => {
         }
         const result = await auctions.getPhoto(parseInt(id, 10));
         const path = "storage/images/" + result;
-        Logger.debug(`${path}`)
         const photo = await fs.readFile("storage/images/" + result);
         res.status(200).contentType(mime.getType("storage/images/" + result)).send(photo);
         return;
