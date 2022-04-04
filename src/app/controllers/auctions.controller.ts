@@ -18,28 +18,59 @@ const list = async (req: Request, res: Response) : Promise<void> => {
     let startIndex: number;
     if (req.query.hasOwnProperty("startIndex")) {
         startIndex = parseInt(req.query.startIndex.toString(), 10);
+        if (!/^\d+$/.test(req.query.startIndex.toString())) {
+            res.status(400).send(`Invalid startIndex`);
+            return;
+        }
+        if (startIndex < 0) {
+            res.status(400).send(`Invalid startIndex`);
+            return;
+        }
     } else {
         startIndex = 0;
     }
     let count: number;
     if (req.query.hasOwnProperty("count")) {
         count = parseInt(req.query.count.toString(), 10);
+        if (!/^\d+$/.test(req.query.count.toString())) {
+            res.status(400).send(`Invalid count`);
+            return;
+        }
     }
     let q: string;
     if (req.query.hasOwnProperty("q")) {
         q = '%' + req.query.q.toString() + '%';
+        if (req.query.q.toString().length < 1) {
+            res.status(400).send(`Invalid query`);
+            return;
+        }
     }
     let categoryIds: number[];
     if (req.query.hasOwnProperty("categoryIds")) {
         categoryIds = req.query.categoryIds.toString().split(',').map(Number);
+        // tslint:disable-next-line:prefer-for-of
+        for (let i=0; i<categoryIds.length; i++) {
+            if (!await isValidCategory(categoryIds[0])) {
+                res.status(400).send(`Invalid query`);
+                return;
+            }
+        }
     }
     let sellerId: number;
     if (req.query.hasOwnProperty("sellerId")) {
         sellerId = parseInt(req.query.sellerId.toString(), 10);
+        if (!/^\d+$/.test(req.query.sellerId.toString())) {
+            res.status(400).send(`Invalid sellerId`);
+            return;
+        }
     }
     let bidderId: number;
     if (req.query.hasOwnProperty("bidderId")) {
         bidderId = parseInt(req.query.bidderId.toString(), 10);
+        if (!/^\d+$/.test(req.query.bidderId.toString())) {
+            res.status(400).send(`Invalid bidderId`);
+            return;
+        }
     }
     let sortBy: string;
     if (req.query.hasOwnProperty("sortBy")) {
@@ -57,6 +88,10 @@ const list = async (req: Request, res: Response) : Promise<void> => {
 
 const read = async (req: Request, res: Response) : Promise<void> => {
     const id = req.params.id;
+    if (!/^\d+$/.test(req.params.id)) {
+        res.status(404).send(`Invalid auction ID`);
+        return;
+    }
     Logger.http(`GET single auction with ID ${id}`)
     try {
         const result = await auctions.getOne( parseInt(id, 10));
@@ -75,6 +110,10 @@ const read = async (req: Request, res: Response) : Promise<void> => {
 
 const deleteAuction = async (req: Request, res: Response) : Promise<void> => {
     const id = parseInt(req.params.id, 10);
+    if (!/^\d+$/.test(req.params.id)) {
+        res.status(404).send(`Invalid auction ID`);
+        return;
+    }
     const auth = await authorize(req);
     if (auth === -1) {
         res.status(401).send(`Cannot delete auction, user not logged in`);
@@ -131,7 +170,7 @@ const create = async (req: Request, res: Response) : Promise<void> => {
             res.status(400).send("Please provide endDate that is in the future");
             return;
         }
-        if (!isValidCategory(categoryId)) {
+        if (!await isValidCategory(categoryId)) {
             res.status(400).send("Invalid category ID");
             return;
         }
@@ -151,6 +190,10 @@ const create = async (req: Request, res: Response) : Promise<void> => {
 
 const update = async (req: Request, res: Response) : Promise<void> => {
     const id = parseInt(req.params.id, 10);
+    if(!Object.keys(req.body).length) {
+        res.status(400).send(`No parameters for edit`);
+        return;
+    }
     const title = req.body.title;
     const description = req.body.description;
     const categoryId = parseInt(req.body.categoryId, 10);
@@ -160,6 +203,30 @@ const update = async (req: Request, res: Response) : Promise<void> => {
     if (auth === -1) {
         res.status(401).send(`Cannot edit auction, user not logged in`);
         return;
+    }
+    if (req.query.hasOwnProperty("title")) {
+        if (req.body.title.length < 1) {
+            res.status(400).send(`Invalid title`);
+            return;
+        }
+    }
+    if (req.query.hasOwnProperty("description")) {
+        if (req.body.description.length < 1) {
+            res.status(400).send(`Invalid description`);
+            return;
+        }
+    }
+    if (req.query.hasOwnProperty("reserve")) {
+        if (!/^\d+$/.test(req.query.bidderId.toString())) {
+            res.status(400).send(`Invalid reserve`);
+            return;
+        }
+    }
+    if (req.query.hasOwnProperty("categoryId")) {
+        if (!/^\d+$/.test(req.query.categoryId.toString())) {
+            res.status(400).send(`Invalid categoryId`);
+            return;
+        }
     }
     try {
         if (await doesAuctionExist(id) === false) {
@@ -182,7 +249,7 @@ const update = async (req: Request, res: Response) : Promise<void> => {
             endDate = new Date(endDate);
         }
         if (req.body.hasOwnProperty("categoryId")) {
-            if (!isValidCategory(categoryId)) {
+            if (!await isValidCategory(categoryId)) {
                 res.status(400).send("Invalid category ID");
                 return;
             }

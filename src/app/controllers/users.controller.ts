@@ -94,6 +94,10 @@ const read = async (req: Request, res: Response) : Promise<void> => {
 
 const update = async (req: Request, res: Response) : Promise<void> => {
     const id = req.params.id;
+    if(!Object.keys(req.body).length) {
+        res.status(400).send(`No parameters for edit`);
+        return;
+    }
     try {
         const d = parseInt(id, 10);
         Logger.debug(`${d}`);
@@ -103,6 +107,10 @@ const update = async (req: Request, res: Response) : Promise<void> => {
         }
     } catch {
         res.status(404).send(`Invalid user id: ${id}`);
+        return;
+    }
+    if (!req.body) {
+        res.status(400).send("Patch details missing");
         return;
     }
     Logger.http(`PATCH update user id: ${id}`);
@@ -129,6 +137,14 @@ const update = async (req: Request, res: Response) : Promise<void> => {
             res.status(400).send("Please input valid password");
             return;
         }
+    }
+    if (req.body.hasOwnProperty("password") && !req.body.hasOwnProperty("currentPassword")) {
+        res.status(400).send("Please input current password");
+        return;
+    }
+    if (!req.body.hasOwnProperty("password") && req.body.hasOwnProperty("currentPassword") && !req.body.hasOwnProperty("lastName") && !req.body.hasOwnProperty("firstName") && !req.body.hasOwnProperty("email")) {
+        res.status(400).send("Please input details to change");
+        return;
     }
     if (auth === -1) {
         res.status(401).send(`Cannot edit details, user not logged in`);
