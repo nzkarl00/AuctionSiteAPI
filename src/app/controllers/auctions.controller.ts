@@ -213,12 +213,12 @@ const createBid = async(req: Request, res:Response) : Promise<void> => {
             res.status(403).send(`Cannot bid on own auction`);
             return;
         }
-        if (await isBidGreaterThanMax(amount, id) === false) {
-            res.status(400).send(`Bid must be greater than existing max bid`);
-            return;
-        }
         if (await isAuctionFinished(id)) {
             res.status(403).send(`Cannot bid on auction that has closed`);
+            return;
+        }
+        if (await isBidGreaterThanMax(amount, id) === false) {
+            res.status(403).send(`Bid must be greater than existing max bid`);
             return;
         }
         const result = await auctions.insertBid(id, amount, auth);

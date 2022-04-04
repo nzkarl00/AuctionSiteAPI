@@ -122,10 +122,10 @@ const isBidGreaterThanMax = async(amount: number, auctionId: number) : Promise<b
 const isAuctionFinished = async(auctionId: number) : Promise<boolean> => {
     const conn = await getPool().getConnection();
     const query = 'SELECT end_date FROM auction WHERE id = ?';
-    const result = await conn.query(query, [auctionId]);
-    const things = result[0][0].end_date < Date.now();
+    const [ result ] = await conn.query(query, [auctionId]);
+    const things = (result[0].end_date < Date.now());
     conn.release();
-    return result[0][0].end_date < Date.now();
+    return things;
 }
 
 const doesAuctionExist = async(auctionId: number) : Promise<boolean> => {

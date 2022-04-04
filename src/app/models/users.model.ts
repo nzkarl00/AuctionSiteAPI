@@ -125,6 +125,14 @@ const userHasImage = async(id: number) : Promise<boolean> => {
     return result.length !== 0;
 }
 
+const userHasEmail = async(email: string) : Promise<boolean> => {
+    const conn = await getPool().getConnection();
+    const query = 'SELECT id FROM user WHERE email = ?';
+    const [ result ] = await conn.query(query, [email]);
+    conn.release();
+    return result.length !== 0;
+}
 
 
-export {get, insert, login, alter, logout, getPhoto, updatePhoto, removePhoto, doesUserExist, userHasImage}
+
+export {get, insert, login, alter, logout, getPhoto, updatePhoto, removePhoto, doesUserExist, userHasImage, userHasEmail}

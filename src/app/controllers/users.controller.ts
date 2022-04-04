@@ -2,7 +2,7 @@ import * as users from '../models/users.model';
 import Logger from "../../config/logger";
 import {Request, Response} from "express";
 import {authorize} from "../middleware/auth.middleware";
-import {doesUserExist, getPhoto, userHasImage} from "../models/users.model";
+import {doesUserExist, getPhoto, userHasEmail, userHasImage} from "../models/users.model";
 import fs from "mz/fs";
 import mime from "mime";
 import {auctionHasImage} from "../models/auctions.model";
@@ -25,31 +25,67 @@ const create = async (req: Request, res: Response) : Promise<void> => {
         res.status(400).send("Please provide password field");
         return
     }
+    const emailRegex = new RegExp(/^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/);
     const firstName = req.body.firstName;
     const lastName = req.body.lastName;
     const email = req.body.email;
     const password = req.body.password;
+    if (!emailRegex.test(email)) {
+        res.status(400).send("Please input valid email");
+        return;
+    }
+    if (firstName.length < 1) {
+        res.status(400).send("Please input valid first name");
+        return;
+    }
+    if (lastName.length < 1) {
+        res.status(400).send("Please input valid last name");
+        return;
+    }
+    if (password.length < 1) {
+        res.status(400).send("Please input valid password");
+        return;
+    }
     Logger.http(`POST Create user ${firstName} ${lastName}`)
     try {
+        if (await userHasEmail(email)) {
+            res.status(400).send("Email in use");
+            return;
+        }
         const result = await users.insert(firstName, lastName, email, password);
         res.status( 201 ).send({"userId": result.insertId} );
+        return;
     } catch( err ) {
         res.status( 500 ).send( `ERROR creating user ${firstName} ${lastName}: ${
             err }` );
+        return;
     }
 }
 
 const read = async (req: Request, res: Response) : Promise<void> => {
     const id = req.params.id;
+    try {
+        const d = parseInt(id, 10);
+        Logger.debug(`${d}`);
+        if (isNaN(d)) {
+            res.status(404).send(`Invalid user id: ${id}`);
+            return;
+        }
+    } catch {
+        res.status(404).send(`Invalid user id: ${id}`);
+        return;
+    }
     Logger.http(`GET user id: ${id}`)
     const auth = await authorize(req);
     try {
         const result = await users.get(parseInt(id, 10), auth);
         if (result.length === 0) {
             res.status(404).send(`User ${id} not found`);
+            return;
         } else {
             Logger.debug(`Test value ${result[0]}`)
             res.status(200).send(result[0]);
+            return;
         }
     } catch(err) {
         res.status(500).send(`ERROR reading user ${id}: ${err}`);
@@ -58,6 +94,17 @@ const read = async (req: Request, res: Response) : Promise<void> => {
 
 const update = async (req: Request, res: Response) : Promise<void> => {
     const id = req.params.id;
+    try {
+        const d = parseInt(id, 10);
+        Logger.debug(`${d}`);
+        if (isNaN(d)) {
+            res.status(404).send(`Invalid user id: ${id}`);
+            return;
+        }
+    } catch {
+        res.status(404).send(`Invalid user id: ${id}`);
+        return;
+    }
     Logger.http(`PATCH update user id: ${id}`);
     const firstName = req.body.firstName;
     const lastName  = req.body.lastName;
@@ -65,29 +112,61 @@ const update = async (req: Request, res: Response) : Promise<void> => {
     const password = req.body.password;
     const currentPassword = req.body.currentPassword;
     const auth = await authorize(req);
-    if (parseInt(id,10) !== auth) {
-        res.status(403).send(`Forbidden, user id: ${id} is not logged in`);
-    } else {
+    if (req.body.hasOwnProperty("firstName")) {
+        if (firstName.length < 1) {
+            res.status(400).send("Please input valid first name");
+            return;
+        }
+    }
+    if (req.body.hasOwnProperty("lastName")) {
+        if (lastName.length < 1) {
+            res.status(400).send("Please input valid last name");
+            return;
+        }
+    }
+    if (req.body.hasOwnProperty("password")) {
+        if (password.length < 1) {
+            res.status(400).send("Please input valid password");
+            return;
+        }
+    }
+    if (auth === -1) {
+        res.status(401).send(`Cannot edit details, user not logged in`);
+        return;
+    }
+    try {
+        if (!await doesUserExist(parseInt(id, 10))) {
+            res.status(404).send(`User does not exist`);
+            return;
+        }
+        if (parseInt(id,10) !== auth) {
+            res.status(403).send(`Forbidden, user id: ${id} is not logged in`);
+            return;
+        }
+        if (req.body.hasOwnProperty("email")) {
+            if (await userHasEmail(email)) {
+                res.status(400).send("Email in use");
+                return;
+            }
+        }
+        const emailRegex = new RegExp(/^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/);
         if (email !== undefined ) {
-            if (!email.includes('@')) {
-                res.status(400).send(`Email ${email} does not contain an @, bad request`);
+            if (!emailRegex.test(email)) {
+                res.status(400).send("Please input valid email");
+                return;
             }
         }
-        const result = await users.get(parseInt(id, 10), auth);
-        if (result.length === 0) {
-            res.status(400).send(`Invalid user id`);
+        const ret = await users.alter(parseInt(id, 10), auth, firstName, lastName, email, password, currentPassword);
+        if (ret === true) {
+            res.status(200).send(`Successfully updated details of user ${id}`);
+            return;
         } else {
-            try {
-                const ret = await users.alter(parseInt(id, 10), auth, firstName, lastName, email, password, currentPassword);
-                if (ret === true) {
-                    res.status(200).send(`Successfully updated details of user ${id}`);
-                } else {
-                    res.status(401).send(`Invalid current password, cannot update to new password`);
-                }
-            } catch (err) {
-                res.status(500).send(`ERROR updating user ${id}: ${err}`);
-            }
+            res.status(400).send(`Invalid current password, cannot update to new password`);
+            return;
         }
+    } catch (err) {
+                res.status(500).send(`ERROR updating user ${id}: ${err}`);
+                return;
     }
 }
 
@@ -101,7 +180,15 @@ const login = async (req: Request, res: Response) : Promise<void> => {
         return
     }
     const email = req.body.email;
+    if (email.length < 3) {
+        res.status(400).send("Please provide valid email");
+        return;
+    }
     const password = req.body.password;
+    if (password.length < 1) {
+        res.status(400).send("Please provide valid password");
+        return;
+    }
     Logger.http(`POST attempting to log in user ${email}`)
     try {
         const result = await users.login(email, password);
