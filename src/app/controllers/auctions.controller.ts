@@ -144,12 +144,16 @@ const deleteAuction = async (req: Request, res: Response) : Promise<void> => {
 const create = async (req: Request, res: Response) : Promise<void> => {
     if (!req.body.hasOwnProperty("title")) {
         res.status(400).send("Please provide title field");
+        return;
     } else if (!req.body.hasOwnProperty("description")) {
         res.status(400).send("Please provide description field");
+        return;
     } else if (!req.body.hasOwnProperty("categoryId")) {
         res.status(400).send("Please provide categoryId field");
+        return;
     } else if (!req.body.hasOwnProperty("endDate")) {
         res.status(400).send("Please provide endDate field");
+        return;
     }
     const title = req.body.title;
     Logger.http(`POST create auction with title ${title}`);
